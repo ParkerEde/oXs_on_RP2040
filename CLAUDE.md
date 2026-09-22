@@ -1,0 +1,163 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+oXs (openXsensor) firmware for RP2040 boards (Pico / RP2040-Zero / RP2040-TINY). A single binary that
+sits between one or two RC receivers and the model, and can simultaneously do: telemetry (11 RC
+protocols), up to 16 PWM servo outputs, SBUS output, gyro stabilization, servo sequencers, data
+logging over UART, and a LORA "locator" link. C++ on the Raspberry Pi Pico SDK, bare metal, no RTOS.
+
+The user-facing manual is `README.md` — it is the authoritative description of behavior, wiring,
+USB commands and the calibration/learning procedures. Read the relevant section before changing
+behavior in those areas.
+
+## Build
+
+Requires the Raspberry Pi Pico SDK toolchain (CMake >=3.13, Ninja, arm-none-eabi-gcc, `PICO_SDK_PATH`).
+**None of it is installed in this environment**, so builds cannot be run here without installing it
+(Windows: the `pico-setup-windows` installer).
+
+```sh
+cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$PICO_SDK_PATH/cmake/preload/toolchains/pico_arm_gcc.cmake
+cmake --build build
+```
+
+In VS Code: `CMake: Configure`, then build the `oXs` target (kit "Pico ARM GCC" is in `.vscode/cmake-kits.json`).
+
+Build gotchas:
+- `CMakeLists.txt` has two POST_BUILD steps: it copies `oXs.uf2` to the repo root (that checked-in
+  `oXs.uf2` is the released firmware), **and** copies it to drive `E:`. The second copy fails the
+  build on any machine without an `E:` drive — comment it out or point it at the RPI-RP2 drive.
+- Sources are picked up with `file(GLOB ... "src/*.h" "src/*.cpp")`, so new files need no CMake edit,
+  but every `src/*.pio` that is used must be added explicitly with `pico_generate_pio_header`.
+- `src/mpu - mahony for vario.cpp` and `src/mpu_bu.cpp` are dead alternates: they are globbed into the
+  build but their whole body is inside `#ifdef MAHONY_USED_INITIALLY_FOR_VARIO` / `#ifdef USE_MPU_BU`,
+  which are never defined. `*.bak` and `crsf - Copie_*.txt` are not compiled at all.
+
+Flashing: hold BOOT while plugging USB, drag `oXs.uf2` onto the RPI-RP2 drive. `doc/flash_nuke.uf2`
+erases flash (and therefore the stored config).
+
+## Tests
+
+There are none. `lib/`, `test/` and `include/README` are leftovers from a PlatformIO scaffold and
+contain only boilerplate READMEs. Verification is done on hardware over the USB serial console
+(115200 8N1, terminal must send CR+LF).
+
+## Configuration: two distinct layers
+
+Keep these apart — confusing them is the most common source of wrong advice here.
+
+1. **Runtime parameters** (`struct CONFIG` in `src/param.h`) — pin assignments, protocol, scales,
+   failsafe, gyro PIDs, MPU calibration, sequencers, gyro mixer. Set by the user over USB serial
+   (`KEY=value`, `;`-separated, then `SAVE`, then power cycle). **No recompile needed.**
+   Stored in flash by `param.cpp` at fixed offsets from `XIP_BASE`:
+   `FLASH_CONFIG_OFFSET` = 256 KiB, sequencers at +4 KiB, gyro mixer at +8 KiB.
+   Each blob is version-tagged (`CONFIG_VERSION`, `SEQUENCER_VERSION`, `GYROMIXER_VERSION`).
+   **Changing a struct layout means bumping its version** — on mismatch `setupConfig()` silently
+   falls back to the `_xxx` defaults in `config.h`; without a bump, stale flash is memcpy'd into the
+   new layout and the device misbehaves.
+2. **Compile-time parameters** (`src/config.h`, ~26 KB) — telemetry field priorities for
+   Sport/Fbus/Exbus, SBUS2 slot assignment, MPX field/alarm table, I2C addresses, sensor variants
+   (`KX134_IS_USED`, `USE_RFM95`, `USEDS18B20`), LORA radio settings, and the `_xxx` default values
+   for every runtime parameter. Changing these requires a rebuild and reflash.
+
+## Architecture
+
+### Dual-core split (`src/main.cpp`)
+
+- **core1** = sensors only: `setupSensors()` probes every I2C/serial sensor and `getSensors()` polls
+  them in a tight loop. It pushes results to core0 through `queue_t qSensorData` as
+  `{uint8_t type; int32_t data}` via `sent2Core0()`. `type` is a `fieldIdx` enum value, or one of the
+  `0xFA..0xFF` pseudo-types (save-config request, camera pitch/roll, gyro X/Y/Z).
+  core0 sends calibration requests back over `qSendCmdToCore1`.
+- **core0** = everything real-time-facing: drain the sensor queue, run the protocol handler, apply
+  failsafe, gyro corrections, PWM/SBUS output, sequencers, logger, USB command parsing, LED, button.
+- A watchdog is armed at 3500 ms and kicked several times per `loop()`. Any blocking code added to
+  core0 (or a long `sleep_ms`) will reboot the board. Long operations (`saveConfig`) explicitly
+  re-arm the watchdog with a larger timeout first.
+- `printf` goes to USB CDC (`pico_enable_stdio_usb`). Uncommenting `#define DEBUG` in `config.h` makes
+  setup wait for a USB terminal.
+
+### Protocol dispatch
+
+`config.protocol` is a single char, and both `setup()` and `loop()` in `main.cpp` are an if/else
+chain over it. Each protocol is one `src/<name>.cpp` exposing `setupXxx()` + `handleXxx...()`:
+
+| char | protocol | file |
+|---|---|---|
+| `C` | CRSF / ELRS | `crsf_in.cpp`, `crsf_out.cpp` |
+| `S` | FrSky Sport | `sport.cpp` |
+| `F` | FrSky Fbus | `fbus.cpp` |
+| `B` | FrSky Hub | `frsky_hub.cpp` |
+| `J` | Jeti EX | `jeti.cpp` |
+| `E` | Jeti EXBUS | `exbus.cpp` |
+| `H` | Graupner HoTT | `hott.cpp` |
+| `M` | Multiplex | `mpx.cpp` |
+| `I` | Flysky IBUS | `ibus.cpp`, `ibus_in.cpp` |
+| `L` | Spektrum SRXL2 | `srxl2.cpp` |
+| `2` | Futaba SBUS2 | `sbus2_tlm.cpp` |
+
+Adding a protocol means touching both chains in `main.cpp` plus the `PROTOCOL=` validation in
+`param.cpp`.
+
+### PIO / UART budget (hard constraint)
+
+Pins are user-configurable, so almost every serial link is bit-banged in PIO rather than using the
+hardware UARTs. The allocation is fixed and documented at the top of `main.cpp`:
+
+- pio0 sm0 = protocol TX (CRSF/Sport/Jeti/HoTT/MPX/SRXL2/Ibus), sm1 = protocol RX, sm2 = SBUS out, sm3 = ESC RX
+- pio1 sm0 = GPS TX then reused for GPS RX, sm1 = RPM, sm2 = logger UART TX, sm3 = WS2812 RGB LED
+- UART0 = secondary CRSF/SBUS in, UART1 = primary CRSF/SBUS in
+
+There are no free state machines. Any new serial peripheral has to share or replace one of these.
+
+### Telemetry field model
+
+All measurements live in one flat array `field fields[NUMBER_MAX_IDX]` (`src/tools.h`), indexed by the
+`fieldIdx` enum (`VSPEED`, `MVOLT`, `LATITUDE`, ...), each with `value` / `available` / `onceAvailable`.
+Sensors fill it via core1; protocol modules read it and map it into their own wire format.
+
+Adding a telemetry field requires edits in many places — `src/tools.h` carries the authoritative
+checklist next to the enum (tools.cpp FVP/FVN values, param.cpp `printFieldValues()`, sport.cpp
+tables + `calculateSportMaxBandwidth()`, ibus.cpp `ibusTypes[]`, sbus2_tlm.cpp slot, config.h slot +
+priority `#define`, exbus.cpp `sensorsParam[]`, mpx.cpp `oXsToMpxUnits[]`, srxl2, and
+`doc/fields per protocol.txt`). Follow that list.
+
+### RC channel pipeline (core0 `loop()`)
+
+```
+receiver frame -> sbusFrame -> (failsafe if stale) -> rcChannelsUs     -> logger, sequencers
+                                                   -> rcChannelsUsCorr -> gyro corrections -> PWM out, SBUS out
+```
+
+`setRcChannels()` (`sbus_out_pwm.cpp`) produces both arrays; gyro only ever writes the `...Corr` copy.
+The `rcChannelsUsChanged` / `rcChannelsUsCorrChanged` / `newRcChannelsFrameReceived` flags gate the
+downstream updates and are reset at the end of every loop iteration.
+
+### USB command handling
+
+`handleUSBCmd()` -> `handleOneCmd()` in `param.cpp` is a long `strcmp(key, ...)` chain (~180 commands).
+A new parameter needs: the field in `struct CONFIG`, a `_default` in `config.h`, the parse branch in
+`handleOneCmd()`, output in `printConfig...()` and in `dumpConfig()`, validation in
+`checkConfigAndSequencers()`, and a `CONFIG_VERSION` bump.
+
+### Other subsystems
+
+- `gyro.cpp` — PID stabilization plus the "learning process" (mixer calibration) that discovers the
+  handset's mixers, servo limits and MPU orientation from stick movements. State is `gyroMixer_t`,
+  saved to its own flash page. README documents the LED-driven user procedure in detail.
+- `sequencer.cpp` — up to 16 sequencers (one per GPIO 0-15), each with sequences selected by RC
+  channel value and steps with smooth/value/keep. Parsed from a single `SEQ=[...](...){...}` command.
+- `logger.cpp` — stuffed, delta-compressed byte stream over a PIO UART to a separate oXs_logger board.
+- `rfm95.cpp` / `sx126x_driver.cpp` — LORA locator over SPI; the RFM95 path is deprecated and only
+  built with `#define USE_RFM95` (default is the Ebyte E220-900M22S).
+- Sensor drivers are auto-probing: baro tries MS5611 -> SPL06 -> BMP280, airspeed tries MS4525 ->
+  SDP3X -> XGZP, and each sets its own `...Installed` flag. Never assume a sensor is present.
+
+## Conventions
+
+The code is a long-running hobby project with its own style: commented-out debug blocks, `//xxxxx`
+markers and `to do` lists left in place (a large one at the top of `main.cpp`). Match the surrounding
+style rather than reformatting, and leave existing commented-out code alone unless the task is about it.
