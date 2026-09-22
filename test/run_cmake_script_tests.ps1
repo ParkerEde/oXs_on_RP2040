@@ -124,6 +124,46 @@ try {
     if ($out) { Remove-Item -Force $out -ErrorAction SilentlyContinue }
 }
 
+# ---------------------------------------------------------------------------
+"stage_release.cmake"
+# ---------------------------------------------------------------------------
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("oxs_dist_" + [guid]::NewGuid().ToString('N').Substring(0,8))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+    $hdr  = Join-Path $tmp 'oxs_version.h'
+    $uf2  = Join-Path $tmp 'oXs_somebranch.uf2'
+    $dist = Join-Path $tmp 'dist'
+    Set-Content -Path $hdr -Value '#define VERSION "9.8.7-somebranch-abc1234"'
+    [IO.File]::WriteAllBytes($uf2, [byte[]](1,2,3,4,5))
+
+    $r = RunScript 'stage_release.cmake' @("UF2=$uf2", "VERSION_HEADER=$hdr", "DIST_DIR=$dist")
+    $staged = Join-Path $dist 'oXs_9.8.7-somebranch-abc1234.uf2'
+    Check 'staged file is named after the version in the header' `
+          ($r.Code -eq 0 -and (Test-Path $staged)) $r.Output
+    Check 'staged file is a byte identical copy' `
+          ((Test-Path $staged) -and ((Get-FileHash $staged).Hash -eq (Get-FileHash $uf2).Hash)) ''
+
+    # a build from a dirty tree must be recognisable by its file name alone
+    Set-Content -Path $hdr -Value '#define VERSION "9.8.7-somebranch-abc1234-dirty"'
+    $r = RunScript 'stage_release.cmake' @("UF2=$uf2", "VERSION_HEADER=$hdr", "DIST_DIR=$dist")
+    $dirty = Join-Path $dist 'oXs_9.8.7-somebranch-abc1234-dirty.uf2'
+    Check 'dirty build is staged under its dirty name' ((Test-Path $dirty)) $r.Output
+    Check 'the previous build is no longer in dist' (-not (Test-Path $staged)) `
+          'stale artifacts would make it ambiguous which file to hand out'
+    Check 'dist holds exactly one uf2' `
+          (@(Get-ChildItem $dist -Filter *.uf2 -ErrorAction SilentlyContinue).Count -eq 1) ''
+
+    $r = RunScript 'stage_release.cmake' @("UF2=$tmp/missing.uf2", "VERSION_HEADER=$hdr", "DIST_DIR=$dist")
+    Check 'missing uf2 is an error' ($r.Code -ne 0) $r.Output
+
+    $r = RunScript 'stage_release.cmake' @("UF2=$uf2", "VERSION_HEADER=$tmp/missing.h", "DIST_DIR=$dist")
+    Check 'missing version header is an error' ($r.Code -ne 0) $r.Output
+} finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+}
+
 ""
 "$script:pass passed, $script:fail failed"
-if ($script:fail -gt 0) { exit 1 }
+# explicit, or the exit status would be that of the last cmake call - which the error
+# cases deliberately make non-zero, so a fully passing run would look like a failure
+if ($script:fail -gt 0) { exit 1 } else { exit 0 }

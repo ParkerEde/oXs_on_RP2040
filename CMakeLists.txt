@@ -133,6 +133,21 @@ add_custom_command(TARGET oXs POST_BUILD
   VERBATIM
 )
 
+# The linked artifact keeps a stable name so ninja can track it. What gets handed to other
+# people is staged into build/dist/ under the version the firmware actually prints, e.g.
+# oXs_3.0.11-rk-main-85a5014.uf2 - so a file on someone's disk and the version a board
+# reports can always be matched up, and a build from an uncommitted tree carries -dirty in
+# its name. dist/ always holds exactly the current build and nothing else.
+add_custom_command(TARGET oXs POST_BUILD
+  COMMAND ${CMAKE_COMMAND}
+          -DUF2=$<TARGET_FILE_DIR:oXs>/$<TARGET_FILE_BASE_NAME:oXs>.uf2
+          -DVERSION_HEADER=${OXS_VERSION_HEADER}
+          -DDIST_DIR=${CMAKE_BINARY_DIR}/dist
+          -P ${CMAKE_CURRENT_LIST_DIR}/tools/stage_release.cmake
+  COMMENT "Staging the UF2 under its version"
+  VERBATIM
+)
+
 
 # Optionally copy the built UF2 somewhere after each build. Empty (the default)
 # copies nothing, so a build never touches anything outside the build directory.

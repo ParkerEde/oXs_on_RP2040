@@ -56,6 +56,14 @@ string changed, since everything includes `config.h`. `printConfigAndSequencers(
 a board reports over USB names the exact commit it was built from — and says so when that build had
 uncommitted changes. Bump `VERSION_BASE` only when tracking a new upstream release.
 
+The linked artifact keeps the stable branch name so ninja can track it. **The file to hand to other
+people is `build/dist/oXs_<version>.uf2`**, staged by `tools/stage_release.cmake` under the exact
+string the firmware prints, so a file on someone's disk and a board's reported version can always be
+matched up. `dist/` is wiped of UF2s on each build and therefore holds exactly the current one. A
+build from an uncommitted tree lands there as `...-dirty.uf2` — that name is the signal not to
+publish it. GitHub has no per-branch assets: attach that file to a *release* (which hangs off a tag,
+and the tag may point at a commit on a topic branch).
+
 ### The 256 KiB flash ceiling
 
 `param.cpp` stores its blobs at fixed offsets from `XIP_BASE` starting at `FLASH_CONFIG_OFFSET`
@@ -151,7 +159,7 @@ have their own runnable tests, which build throwaway git repos and fake binaries
 directory and never touch the working tree:
 
 ```powershell
-.\test\run_cmake_script_tests.ps1     # 9 checks, exits non-zero on failure
+.\test\run_cmake_script_tests.ps1     # 16 checks, exits non-zero on failure
 ```
 
 `lib/` and `include/README` are still leftovers from a PlatformIO scaffold and contain only
