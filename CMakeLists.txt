@@ -74,10 +74,17 @@ pico_enable_stdio_uart(oXs 0)
 pico_add_extra_outputs(oXs)
 
 
-add_custom_command(TARGET oXs POST_BUILD
-  COMMAND ${CMAKE_COMMAND}
-  ARGS -E copy oXs.uf2 ${CMAKE_SOURCE_DIR}   
-)
-#  ARGS -E copy oXs.uf2 ${CMAKE_SOURCE_DIR} it was with -E   
-# copy the uf2 file to E: drive
-add_custom_command(TARGET oXs POST_BUILD COMMAND ${CMAKE_COMMAND} ARGS -E copy oXs.uf2 C: )
+# Optionally copy the built UF2 somewhere after each build. Empty (the default)
+# copies nothing, so a build never touches anything outside the build directory.
+#   -DOXS_COPY_UF2_TO=.      refresh the oXs.uf2 committed in the repo root
+#   -DOXS_COPY_UF2_TO=E:/    drop it straight onto a mounted RPI-RP2 drive to flash
+set(OXS_COPY_UF2_TO "" CACHE STRING "Directory to copy oXs.uf2 to after a build (empty = do not copy)")
+
+if(OXS_COPY_UF2_TO)
+  add_custom_command(TARGET oXs POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            $<TARGET_FILE_DIR:oXs>/oXs.uf2
+            ${OXS_COPY_UF2_TO}
+    COMMENT "Copying oXs.uf2 to ${OXS_COPY_UF2_TO}"
+  )
+endif()
