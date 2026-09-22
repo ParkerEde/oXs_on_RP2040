@@ -80,8 +80,8 @@ git cherry-pick <sha>...
 ```
 
 Our commits split into two kinds, and they must not be mixed in a PR:
-- **upstreamable** — real fixes, e.g. the negative-`OFFSET2` guards in `esc.cpp` (`c4bef56`, `cfe404e`)
-  and the opt-in UF2 copy (`50e9cda`)
+- **upstreamable** — real fixes, e.g. the negative-`OFFSET2` guards in `esc.cpp` (`c4bef56` for HW5,
+  `127aa91` for HW4) and the opt-in UF2 copy (`9b35cde`)
 - **local only** — `VERSION "3.0.11-RK"` in `config.h`, machine-local paths in `.vscode/settings.json`,
   rebuilt `oXs.uf2` binaries, and this file
 
