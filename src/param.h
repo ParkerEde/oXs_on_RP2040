@@ -5,7 +5,11 @@
 #include "crsf_frames.h"
 #include "gyro.h"
 
-#define CONFIG_VERSION 8
+#define CONFIG_VERSION 9
+
+// Size of the version 8 layout. A v8 config stored in flash is a byte exact prefix of
+// the current one, so setupConfig() can reuse it instead of discarding all parameters.
+#define CONFIG_V8_SIZE 244
 
 struct CONFIG{
     uint8_t version = CONFIG_VERSION;
@@ -85,6 +89,7 @@ struct CONFIG{
     uint8_t pinHigh ;
     uint8_t pinLow ;
     uint8_t pinE220Busy;
+    uint32_t gpsBaudrate ;   // baudrate used to talk to the GPS; must stay the last field (see CONFIG_V8_SIZE)
 };
 
 void handleUSBCmd(void);

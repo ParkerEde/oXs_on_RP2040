@@ -2,6 +2,34 @@
 
 
 #include "config.h"
+#include <stdint.h>
+
+// A ublox UBX-CFG-PRT frame: 2 sync + 2 class/id + 2 length + 20 payload + 2 checksum
+#define UBX_CFG_PRT_LEN 28
+
+// Baudrates oXs accepts on the link to the GPS. 38400 is the oXs default; a
+// recently delivered Beitian BE-250 (ublox M10) leaves the factory on 115200.
+constexpr bool gpsBaudrateIsValid(uint32_t baud) {
+    return baud == 9600 || baud == 19200 || baud == 38400 || baud == 57600 ||
+           baud == 115200 || baud == 230400 || baud == 460800 ;
+}
+
+// Write baud into the baudRate field of a UBX-CFG-PRT frame (payload offset 8, little
+// endian) and recalculate the checksum over the class byte up to the end of the payload.
+constexpr void ubxPatchCfgPrtBaudrate(uint8_t frame[], uint32_t baud) {
+    frame[14] = (uint8_t) ( baud        & 0xFF);
+    frame[15] = (uint8_t) ((baud >>  8) & 0xFF);
+    frame[16] = (uint8_t) ((baud >> 16) & 0xFF);
+    frame[17] = (uint8_t) ((baud >> 24) & 0xFF);
+    uint8_t ckA = 0 ;
+    uint8_t ckB = 0 ;
+    for (uint8_t i = 2 ; i < (UBX_CFG_PRT_LEN - 2) ; i++) {
+        ckA += frame[i] ;
+        ckB += ckA ;
+    }
+    frame[UBX_CFG_PRT_LEN - 2] = ckA ;
+    frame[UBX_CFG_PRT_LEN - 1] = ckB ;
+}
 
 // from the UBlox6 document, the largest payout we receive i the NAV-SVINFO and the payload size
 // is calculated as 8 + 12*numCh.  numCh in the case of a Glonass receiver is 28.

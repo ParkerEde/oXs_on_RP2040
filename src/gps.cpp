@@ -72,7 +72,9 @@ const uint8_t initGpsM10[] = {
         0X75,0X46// checksum
 };
     
-const uint8_t initGpsM6Part1[] = {
+// not const: the baudrate inside the CFG-PRT command is patched with config.gpsBaudrate
+// in setupGps() (the 38400 below is what a non patched table would ask for)
+uint8_t initGpsM6Part1[] = {
     0xB5,0x62,0x06,0x00,
     0x14,0x00,
     0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,0x00,0x96, //        CFG-PRT : Set port to output only UBX (so deactivate NMEA msg) and set baud = 38400.
@@ -80,7 +82,7 @@ const uint8_t initGpsM6Part1[] = {
     0x91,0x84  // Check sum                rest of CFG_PRT command                            
 };
 
-const uint8_t initGpsM6Part2[] = { 
+uint8_t initGpsM6Part2[] = {   // idem: starts with the same CFG-PRT command and is patched too
         // send command to GPS to change the setup
     0xB5,0x62,0x06,0x00,
     0x14,0x00,
@@ -169,6 +171,9 @@ void GPS::setupGps(void){
     if (config.pinGpsTx == 255) return; // skip if pin is not defined
     if  ( config.gpsType == 'U') {  // send gps config only for U blox with oXs setup (not for cadis nor when when ublox gps is configured externally 
     //if ( ( config.gpsType == 'U') || ( config.gpsType == 'E') ) {
+        // ask the gps for the baudrate that oXs will use afterwards (both tables begin with a CFG-PRT)
+        ubxPatchCfgPrtBaudrate(initGpsM6Part1, config.gpsBaudrate);
+        ubxPatchCfgPrtBaudrate(initGpsM6Part2, config.gpsBaudrate);
         gpsOffsetTx = pio_add_program(gpsPio, &uart_tx_program); // upload the program
         uart_tx_program_init(gpsPio, gpsSmTx, gpsOffsetTx, config.pinGpsRx, 9600);
     } else {
@@ -210,7 +215,7 @@ void GPS::gpsInitRx(){
     }
     uint gpsOffsetRx = pio_add_program(gpsPio, &uart_rx_program);
     //printf("uart rx program init will be performed\n");
-    uart_rx_program_init(gpsPio, gpsSmRx, gpsOffsetRx, config.pinGpsTx, 38400);
+    uart_rx_program_init(gpsPio, gpsSmRx, gpsOffsetRx, config.pinGpsTx, config.gpsBaudrate);
     //printf("uart rx program init has been be performed\n");
     busy_wait_us(1000);
     uint8_t dummy;
@@ -266,7 +271,7 @@ void GPS::handleGpsUblox(){
             break;
         case GPS_M10_IN_RECONFIGURATION:
             if ((microsRp() - lastActionUs ) > 5000) { // wait at least  4mse between baudrate change 
-                uart_tx_program_init(gpsPio, gpsSmTx, gpsOffsetTx, config.pinGpsRx, 38400); 
+                uart_tx_program_init(gpsPio, gpsSmTx, gpsOffsetTx, config.pinGpsRx, config.gpsBaudrate); 
                 //sleep_ms(2); // to avoid perhaps a pulse due to change of baudrate
                 //pio_sm_put (gpsPio, gpsSmTx, (uint32_t) 0 ); // send a dummy char to avoid glitch
                 //sleep_ms(10); // wait to be sure the char is sent and line goes high again.

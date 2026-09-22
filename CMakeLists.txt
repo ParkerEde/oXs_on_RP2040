@@ -88,3 +88,17 @@ if(OXS_COPY_UF2_TO)
     COMMENT "Copying oXs.uf2 to ${OXS_COPY_UF2_TO}"
   )
 endif()
+
+
+# Compile time tests (constexpr / static_assert). There is no host compiler and
+# no test framework here, so building this target is the test run: a failed test
+# is a compile error. It is built together with the firmware so a regression in
+# the config flash layout cannot pass unnoticed.
+#   cmake --build build --target oXs_tests
+add_library(oXs_tests OBJECT test/test_config_and_gps.cpp)
+# reuse the firmware's include paths and defines without pulling in the SDK sources
+target_include_directories(oXs_tests PRIVATE
+        src
+        $<TARGET_PROPERTY:oXs,INCLUDE_DIRECTORIES>
+        )
+target_compile_definitions(oXs_tests PRIVATE $<TARGET_PROPERTY:oXs,COMPILE_DEFINITIONS>)

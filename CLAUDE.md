@@ -91,8 +91,24 @@ conflict. Leave it alone on topic branches; refresh it only on `rk-main`, with
 
 ## Tests
 
-There are none. `lib/`, `test/` and `include/README` are leftovers from a PlatformIO scaffold and
-contain only boilerplate READMEs. Verification is done on hardware over the USB serial console
+There is no host compiler and no test framework on this machine, so there is no runtime test suite.
+What exists instead is `test/test_config_and_gps.cpp`: compile-time tests (`constexpr` +
+`static_assert`) built by the ARM toolchain, where **the build is the test run** and a failed test is
+a compile error.
+
+```powershell
+cmake --build build --target oXs_tests
+```
+
+It is also part of the default `cmake --build build`, so a regression cannot slip through. It pins
+down what cannot be checked on hardware without losing data: that `CONFIG` still fits in one flash
+page, that no field moved relative to the v8 layout (which is what makes the migration in
+`setupConfig()` safe), and the UBX-CFG-PRT baudrate patching including its checksum. When adding
+tests, mutate the code once to confirm the new assert actually fires — a `static_assert` over a typo
+passes silently.
+
+`lib/` and `include/README` are still leftovers from a PlatformIO scaffold and contain only
+boilerplate. Everything behavioural is verified on hardware over the USB serial console
 (115200 8N1, terminal must send CR+LF).
 
 ## Configuration: two distinct layers
@@ -108,6 +124,11 @@ Keep these apart — confusing them is the most common source of wrong advice he
    **Changing a struct layout means bumping its version** — on mismatch `setupConfig()` silently
    falls back to the `_xxx` defaults in `config.h`; without a bump, stale flash is memcpy'd into the
    new layout and the device misbehaves.
+   A bump normally costs the user every stored setting. `setupConfig()` therefore carries a migration
+   for v8 -> v9: `gpsBaudrate` was **appended** to `CONFIG`, so a v8 blob is a byte-exact prefix
+   (`CONFIG_V8_SIZE`) and gets reused with the new field defaulted. Keep new fields at the end and
+   extend that path rather than resetting people's configs. The whole struct is memcpy'd into one
+   256-byte flash page (`saveConfig()`), currently 248 bytes — a `static_assert` guards the rest.
 2. **Compile-time parameters** (`src/config.h`, ~26 KB) — telemetry field priorities for
    Sport/Fbus/Exbus, SBUS2 slot assignment, MPX field/alarm table, I2C addresses, sensor variants
    (`KX134_IS_USED`, `USE_RFM95`, `USEDS18B20`), LORA radio settings, and the `_xxx` default values

@@ -72,10 +72,17 @@ This board can be connected to:
    * a GPS from UBlox (like the beitian bn220) or one that support CASIC messages   
        *  note : a Ublox GPS can be re-configured automatically by oXs ( with own oXs param). It has then to use the default standard ublox config.
 
+          The baudrate used on the link between oXs and the GPS is set with the GPSBAUD parameter (default 38400).  
+          Allowed values are 9600, 19200, 38400, 57600, 115200, 230400 and 460800.  
+              - a M8 (and older) accepts the UBX-CFG-PRT command that oXs sends at 9600 baud, so it switches to GPSBAUD on its own.  
+              - a M10 ignores that command and keeps the baudrate it was delivered with; GPSBAUD must then be set to that value.  
+                E.g. a recently delivered Beitian BE-250 is set on 115200 while an older one was set on 38400. So use GPSBAUD=115200
+                instead of changing the module with U-center.  
+
           It can also be configured manually (with U-center firmware) externally prior to be connected to oXs. Set up must then be:  
-              - 38400 baud (for a M10) or 9600 baud (for a M8)  
+              - the baudrate that GPSBAUD is set to (default 38400)  
               - output on uart1: only 4 UBX messages (no NEMA): UBX-NAV-PVT , UBX-NAV-POSLLH, UBX-NAV-VELNED (when supported) , UBX-NAV-SOL (when supported)
-       * a CASIC gps has to be configured before use in order to generate only NAV-PV messages at 38400 bauds  
+       * a CASIC gps has to be configured before use in order to generate only NAV-PV messages at the baudrate that GPSBAUD is set to (default 38400)  
            This can be done using a FTDI and the program GnssToolkit3.exe (to download from internet)
    * some voltage dividers (=2 resistors) when the voltages to measure exceed 3V  
       note : a voltage can be used to measure e.g. a current (Volt2) or a temperature (Volt3/4) when some external devices are used to generate an analog voltage

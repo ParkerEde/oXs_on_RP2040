@@ -201,7 +201,8 @@
 
 // --------- Parameters for GPS ---------------
 #define GPS_REFRESH_RATE 10 // For Ublox GPS, it is possible to select a refresh rate of 1Hz, 5Hz (defeult) or 10Hz 
-//                        note :a casic gps has to be configured before use in order to generate only NAV-PV messages at 38400 bauds
+//                        note :a casic gps has to be configured before use in order to generate only NAV-PV messages
+//                        at the baudrate set with the GPSBAUD usb command (default 38400 bauds)
 //                        this can be done using a FTDI and program GnssToolkit3.exe (to download from internet)
 
 // --------- Parameter for RPM -------------------
@@ -337,6 +338,7 @@
  #define _offset3  0.0
  #define _offset4  0.0
  #define _gpsType  'U' 
+ #define _gpsBaudrate 38400
  #define _rpmMultiplicator 1.0
  #define _failsafeType  'H'
 //    crsf_channels_s failsafeChannels ;

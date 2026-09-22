@@ -205,6 +205,7 @@ void printHelp(){
     printf("Temperature (on V3, V4)     TEMP = Y            Y=1 if one TMP36 on V3, Y=2 if a second one is on V4\n");
     
     printf("GPS type                    GPS = Y             U=Ublox configured by oXs, E=Ublox configured Externally, C = CADIS\n");
+    printf("    GPS baudrate:           GPSBAUD = 38400     9600, 19200, 38400, 57600, 115200, 230400 or 460800\n");
     printf("RPM multiplicator           RPM_MULT = Y.Y      e.g. 0.5 to divide RPM by 2\n");
     printf("Led inversion               LED = N             N=normal , I=inverted\n");
     printf("Failsafe mode               FAILSAFE = H        Set failsafe to Hold mode\n")  ;
@@ -769,6 +770,19 @@ int8_t handleOneCmd( char * bufferPos){ // handle one command with buffer starti
             return 1;
         } else  {
             printf("Error : GPS type must be U, E or C\n");
+        }
+    }
+    // change GPS baudrate
+    if ( strcmp("GPSBAUD", pkey) == 0 ) {
+        ui = strtoul(pvalue, &ptr, 10);
+        if (*ptr != 0x0) {
+            printf("Error : value is not a valid integer\n");
+        } else if ( ! gpsBaudrateIsValid(ui) ) {
+            printf("Error : GPS baudrate must be 9600, 19200, 38400, 57600, 115200, 230400 or 460800\n");
+        } else {
+            config.gpsBaudrate = ui;
+            printf("GPS baudrate = %" PRIu32 "\n" , config.gpsBaudrate);
+            return 1;
         }
     }
     // change RPM multipicator
@@ -1573,6 +1587,10 @@ void checkConfigAndSequencers(){     // set configIsValid
         printf("Error in parameters: Logger baudrate must be in range 9600...1000000\n");
         configIsValid=false;
     }
+    if ( (config.pinGpsTx != 255) && ( ! gpsBaudrateIsValid(config.gpsBaudrate) )){
+        printf("Error in parameters: GPS baudrate must be 9600, 19200, 38400, 57600, 115200, 230400 or 460800\n");
+        configIsValid=false;
+    }
     //if ( (config.pinEsc != 255) && (config.pinVolt[0]!=255) ) {
     //    printf("Error in parameters: When gpio is defined for ESC, gpio for Volt1 (V1) must be undefined (=255)\n");
     //    configIsValid=false;
@@ -1810,6 +1828,7 @@ void printConfigAndSequencers(){   // print all and perform checks
         } else {
             printf("Foreseen GPS type is unknown  :")  ;
         }
+    printf("GPS baudrate = %" PRIu32 "\n", config.gpsBaudrate)  ;
     if (gps.gpsInstalled && gps.GPS_fix) {
         printf("GPS is detected and has a fix\n")  ;
     } else if (gps.gpsInstalled ) {
@@ -1916,6 +1935,9 @@ void printConfigAndSequencers(){   // print all and perform checks
 #define FLASH_CONFIG_OFFSET (256 * 1024)
 const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_CONFIG_OFFSET);
 
+// the whole config is memcpy'd into one flash page here below, so it may not outgrow it
+static_assert(sizeof(CONFIG) <= FLASH_PAGE_SIZE, "CONFIG does not fit in one flash page anymore");
+
 void saveConfig() {
     //sleep_ms(1000); // let some printf to finish
     uint8_t buffer[FLASH_PAGE_SIZE] ;
@@ -2011,6 +2033,7 @@ void fillConfigWithDefault(){
     config.offset3 = _offset3;
     config.offset4 = _offset4;
     config.gpsType = _gpsType ;
+    config.gpsBaudrate = _gpsBaudrate ;
     config.rpmMultiplicator = _rpmMultiplicator;
     //config.gpio0 = 0;
     //config.gpio1 = 1;
@@ -2113,8 +2136,21 @@ void fillConfigWithDefault(){
     config.pinLow = _pinLow;
 }
 void setupConfig(){   // The config is uploaded at power on
+    bool configIsLoaded = false;
     if (*flash_target_contents == CONFIG_VERSION ) {
         memcpy( &config , flash_target_contents, sizeof(config));
+        configIsLoaded = true;
+    } else if (*flash_target_contents == 8 ) {
+        // A version 8 config is a byte exact prefix of the current one (gpsBaudrate was
+        // appended behind it), so it can be reused instead of discarding all parameters.
+        // It stays converted in ram only; a SAVE writes it back in the current version.
+        memcpy( &config , flash_target_contents, CONFIG_V8_SIZE);
+        config.gpsBaudrate = _gpsBaudrate;
+        config.version = CONFIG_VERSION;
+        configIsLoaded = true;
+        printf("Config was saved by a former version; it is reused with GPS baudrate = %" PRIu32 " (use SAVE to store it)\n", config.gpsBaudrate);
+    }
+    if (configIsLoaded) {
         if (config.pwmHz == 0XFFFF) config.pwmHz = _pwmHz; // set default value when it has not been defined manually
         if ( ( abs( config.accScaleXY + config.accScaleXZ + config.accScaleYZ) > 0.1) ||
                 ( abs( config.accScaleXX * config.accScaleYY * config.accScaleZZ) > 1.2) ||
@@ -3051,6 +3087,7 @@ void dumpConfig(){
     if (config.gpsType == 'U') printf("GPS = U;\n");
     if (config.gpsType == 'E') printf("GPS = E;\n");
     if (config.gpsType == 'C') printf("GPS = C;\n");
+    if (config.pinGpsTx != 255) printf("GPSBAUD = %" PRIu32 ";\n", config.gpsBaudrate );
     
     if (config.pinRpm != 255) printf("RPM_MULT = %f;\n", config.rpmMultiplicator );
     if (config.ledInverted == 'I') printf("LED = I;\n");
