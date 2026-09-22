@@ -55,8 +55,39 @@ Build gotchas:
 Flashing: hold BOOT while plugging USB, drag `build\oXs.uf2` onto the RPI-RP2 drive, or use
 `picotool load -x build\oXs.uf2`. `doc/flash_nuke.uf2` erases flash (and therefore the stored config).
 
-Upstream (`mstrens/oXs_on_RP2040`) has not moved since February 2025; `upstream/test` is the newest
-code there and this branch is based on it.
+## Branches
+
+This is a fork. Upstream (`mstrens/oXs_on_RP2040`) develops on `test`, not `main`, and has not moved
+since February 2025.
+
+| branch | role |
+|---|---|
+| `main` | untouched mirror of `upstream/main` — never commit here |
+| `test` | untouched mirror of `upstream/test` — the base for any pull request |
+| `rk-main` | our trunk; all work lands here |
+| `rk-<topic>` | short-lived topic branches, cut from `rk-main` |
+
+Keeping the two mirrors pristine is what makes a clean PR cheap later:
+
+```bash
+git fetch upstream
+git checkout main && git merge --ff-only upstream/main
+git checkout test && git merge --ff-only upstream/test
+
+# a PR takes only the upstreamable commits, never the local ones
+git checkout -b fix-<topic> upstream/test
+git cherry-pick <sha>...
+```
+
+Our commits split into two kinds, and they must not be mixed in a PR:
+- **upstreamable** — real fixes, e.g. the negative-`OFFSET2` guards in `esc.cpp` (`c4bef56`, `cfe404e`)
+  and the opt-in UF2 copy (`50e9cda`)
+- **local only** — `VERSION "3.0.11-RK"` in `config.h`, machine-local paths in `.vscode/settings.json`,
+  rebuilt `oXs.uf2` binaries, and this file
+
+`oXs.uf2` is a committed binary that git cannot merge, so every branch that rebuilds it creates a
+conflict. Leave it alone on topic branches; refresh it only on `rk-main`, with
+`-DOXS_COPY_UF2_TO=.`, when marking a state as released.
 
 ## Tests
 
