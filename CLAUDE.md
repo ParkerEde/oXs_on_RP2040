@@ -46,6 +46,16 @@ the `oXs.uf2` committed in the repo root needs. To also copy the artifact somewh
 unconditionally, which dirties the working tree on every build and, on `main`, fails the build
 outright when drive `E:` does not exist.)
 
+### Version string
+
+`VERSION` is **generated**, not maintained by hand. `tools/gen_version.cmake` composes
+`VERSION_BASE` from `config.h` with the branch, the short commit and a `-dirty` marker into
+`build/generated/oxs_version.h`, e.g. `3.0.11-rk-main-85a5014`. It runs on every build (not at
+configure time, so a fresh commit cannot leave a stale hash) and rewrites the header only when the
+string changed, since everything includes `config.h`. `printConfigAndSequencers()` prints it, so what
+a board reports over USB names the exact commit it was built from — and says so when that build had
+uncommitted changes. Bump `VERSION_BASE` only when tracking a new upstream release.
+
 ### The 256 KiB flash ceiling
 
 `param.cpp` stores its blobs at fixed offsets from `XIP_BASE` starting at `FLASH_CONFIG_OFFSET`
@@ -136,6 +146,14 @@ against the parameter area. That second boundary is the 256 KiB ceiling above, c
 `tools/check_flash_layout.cmake` instead. Both are needed; the struct assert passing says nothing
 about the image fitting.
 
+The cmake helpers in `tools/` are build tooling and therefore outside the compile-time tests. They
+have their own runnable tests, which build throwaway git repos and fake binaries in the temp
+directory and never touch the working tree:
+
+```powershell
+.\test\run_cmake_script_tests.ps1     # 9 checks, exits non-zero on failure
+```
+
 `lib/` and `include/README` are still leftovers from a PlatformIO scaffold and contain only
 boilerplate. Everything behavioural is verified on hardware over the USB serial console
 (115200 8N1, terminal must send CR+LF).
@@ -177,8 +195,12 @@ Keep these apart — confusing them is the most common source of wrong advice he
 - A watchdog is armed at 3500 ms and kicked several times per `loop()`. Any blocking code added to
   core0 (or a long `sleep_ms`) will reboot the board. Long operations (`saveConfig`) explicitly
   re-arm the watchdog with a larger timeout first.
-- `printf` goes to USB CDC (`pico_enable_stdio_usb`). Uncommenting `#define DEBUG` in `config.h` makes
-  setup wait for a USB terminal.
+- `printf` goes to USB CDC (`pico_enable_stdio_usb`). `#define DEBUG` in `config.h` is **active**,
+  here and upstream: `setup()` waits up to 1 s for `tud_cdc_connected()` and then sleeps another
+  2 s, so every power-on costs ~3 s before anything else runs. It is still not enough to see the
+  early output — the config is loaded at `main.cpp:440` and a terminal opened after that window
+  misses `Clean boot`, the watchdog notice and the config migration message. Do not conclude from a
+  missing line that the code did not run.
 
 ### Protocol dispatch
 

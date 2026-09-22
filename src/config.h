@@ -1,7 +1,20 @@
 #pragma once
 
 #include <stdint.h>
-#define VERSION "3.0.11-RK"
+
+// The version this code base is derived from. VERSION itself is composed from it plus the
+// branch and commit by tools/gen_version.cmake on every build, so what a board prints over
+// USB identifies exactly what was flashed. The fallback applies only when config.h is used
+// outside that build.
+#define VERSION_BASE "3.0.11"
+#if defined(__has_include)
+  #if __has_include("oxs_version.h")
+    #include "oxs_version.h"
+  #endif
+#endif
+#ifndef VERSION
+  #define VERSION VERSION_BASE "-nobuildinfo"
+#endif
 
 #define DEBUG  // force the MCU to wait for some time for the USB connection; still continue if not connected
 

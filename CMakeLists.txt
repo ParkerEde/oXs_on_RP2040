@@ -78,6 +78,23 @@ file(GLOB oXs_SRC CONFIGURE_DEPENDS "src/*.h" "src/*.cpp")
 
 target_sources(oXs PRIVATE ${oXs_SRC}  )
 
+# VERSION carries the branch and the commit (3.0.11-rk-main-85a5014, plus -dirty for an
+# uncommitted tree), so what a board prints identifies exactly what was built. Regenerated
+# on every build rather than at configure time, so a fresh commit cannot leave a stale hash
+# behind; the header is only rewritten when the string changed.
+set(OXS_VERSION_HEADER ${CMAKE_BINARY_DIR}/generated/oxs_version.h)
+add_custom_target(oXs_version ALL
+  COMMAND ${CMAKE_COMMAND}
+          -DSRC_DIR=${CMAKE_CURRENT_LIST_DIR}
+          -DOUT=${OXS_VERSION_HEADER}
+          -P ${CMAKE_CURRENT_LIST_DIR}/tools/gen_version.cmake
+  BYPRODUCTS ${OXS_VERSION_HEADER}
+  COMMENT "Generating the version string from git"
+  VERBATIM
+)
+add_dependencies(oXs oXs_version)
+target_include_directories(oXs PRIVATE ${CMAKE_BINARY_DIR}/generated)
+
 target_link_libraries(oXs PRIVATE
         pico_stdlib
         pico_multicore
@@ -145,3 +162,4 @@ target_include_directories(oXs_tests PRIVATE
         $<TARGET_PROPERTY:oXs,INCLUDE_DIRECTORIES>
         )
 target_compile_definitions(oXs_tests PRIVATE $<TARGET_PROPERTY:oXs,COMPILE_DEFINITIONS>)
+add_dependencies(oXs_tests oXs_version)
