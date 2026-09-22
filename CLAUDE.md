@@ -34,14 +34,36 @@ That layout is installed on this machine (self-contained, nothing on the global 
 ```powershell
 . "$env:USERPROFILE\.pico-sdk\pico-env.ps1"
 cmake -S . -B build -G Ninja
-cmake --build build              # -> build\oXs.uf2
+cmake --build build              # -> build\oXs_<branch>.uf2
 ```
 
-A build writes only into `build/`; the artifact to flash is `build\oXs.uf2`. To also copy it
-somewhere, pass `-DOXS_COPY_UF2_TO=<dir>` — `.` refreshes the `oXs.uf2` committed in the repo root,
-a drive letter flashes a mounted RPI-RP2 directly. (Upstream and `main` do both copies
+A build writes only into `build/`. Artifacts are named after the checked out branch
+(`oXs_rk-main.uf2`) so it stays obvious which build ended up on a board; CMake re-configures itself
+when `.git/HEAD` changes. `-DOXS_UF2_NAME=oXs` gives the plain name back, which is what refreshing
+the `oXs.uf2` committed in the repo root needs. To also copy the artifact somewhere, pass
+`-DOXS_COPY_UF2_TO=<dir>` — a drive letter flashes a mounted RPI-RP2 directly, and
+`-DOXS_UF2_NAME=oXs -DOXS_COPY_UF2_TO=.` is the release refresh. (Upstream and `main` do both copies
 unconditionally, which dirties the working tree on every build and, on `main`, fails the build
 outright when drive `E:` does not exist.)
+
+### The 256 KiB flash ceiling
+
+`param.cpp` stores its blobs at fixed offsets from `XIP_BASE` starting at `FLASH_CONFIG_OFFSET`
+= 256 KiB, and **the linker does not reserve that area**. A firmware that grows past it still links,
+still boots, reads its parameters out of program code (so every setting looks reset) and then wipes
+a sector of itself on the first `SAVE` — the board goes dead until it is re-flashed over BOOTSEL.
+This has happened once, in September 2026.
+
+Two things keep it from happening again:
+- `CMAKE_CXX_FLAGS_RELEASE` is pinned to **`-O2`**. The SDK default `-O3` builds this firmware at
+  ~260 KiB, i.e. straight through the ceiling; `-O2` builds it at ~245 KiB. Do not raise it back
+  without checking the image size.
+- `tools/check_flash_layout.cmake` runs POST_BUILD, compares `oXs_<branch>.bin` (which is exactly the
+  flash footprint) against the offset and **fails the build** on overlap, warning below 8 KiB of
+  headroom. `OXS_FLASH_CONFIG_OFFSET` in `CMakeLists.txt` must be kept in sync with `param.cpp`.
+
+Keeping the offset at 256 KiB is deliberate: moving it would buy megabytes of room but break
+compatibility with upstream and with every config already stored on a board.
 
 Build gotchas:
 - The `sdkVersion` / `toolchainVersion` / `picotoolVersion` block at the top of `CMakeLists.txt` is
@@ -52,8 +74,10 @@ Build gotchas:
   build but their whole body is inside `#ifdef MAHONY_USED_INITIALLY_FOR_VARIO` / `#ifdef USE_MPU_BU`,
   which are never defined. `*.bak` and `crsf - Copie_*.txt` are not compiled at all.
 
-Flashing: hold BOOT while plugging USB, drag `build\oXs.uf2` onto the RPI-RP2 drive, or use
-`picotool load -x build\oXs.uf2`. `doc/flash_nuke.uf2` erases flash (and therefore the stored config).
+Flashing: hold BOOT while plugging USB, drag `build\oXs_<branch>.uf2` onto the RPI-RP2 drive, or use
+`picotool load -x build\oXs_<branch>.uf2`. `doc/flash_nuke.uf2` erases flash (and therefore the
+stored config); it is also the way back from a board bricked by the flash ceiling above, since the
+bootloader lives in ROM and survives.
 
 ## Branches
 
@@ -86,8 +110,8 @@ Our commits split into two kinds, and they must not be mixed in a PR:
   rebuilt `oXs.uf2` binaries, and this file
 
 `oXs.uf2` is a committed binary that git cannot merge, so every branch that rebuilds it creates a
-conflict. Leave it alone on topic branches; refresh it only on `rk-main`, with
-`-DOXS_COPY_UF2_TO=.`, when marking a state as released.
+conflict. Branch-named artifacts keep it out of the way by default; refresh it only on `rk-main`,
+with `-DOXS_UF2_NAME=oXs -DOXS_COPY_UF2_TO=.`, when marking a state as released.
 
 ## Tests
 
@@ -106,6 +130,11 @@ page, that no field moved relative to the v8 layout (which is what makes the mig
 `setupConfig()` safe), and the UBX-CFG-PRT baudrate patching including its checksum. When adding
 tests, mutate the code once to confirm the new assert actually fires — a `static_assert` over a typo
 passes silently.
+
+Note what that file does *not* cover: it guards the struct against the flash page, not the image
+against the parameter area. That second boundary is the 256 KiB ceiling above, checked by
+`tools/check_flash_layout.cmake` instead. Both are needed; the struct assert passing says nothing
+about the image fitting.
 
 `lib/` and `include/README` are still leftovers from a PlatformIO scaffold and contain only
 boilerplate. Everything behavioural is verified on hardware over the USB serial console
