@@ -162,6 +162,81 @@ try {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
+# ---------------------------------------------------------------------------
+"CMakeLists.txt: OXS_COPY_UF2_TO"
+# ---------------------------------------------------------------------------
+# The release refresh silently did nothing for half a year: POST_BUILD commands run
+# with the build directory as their working directory, so the documented "." copied
+# the artifact onto itself and still exited 0. The committed oXs.uf2 went stale while
+# the procedure looked like it worked.
+#
+# This logic lives in CMakeLists.txt rather than tools/, so it cannot be driven with
+# cmake -P. Instead the real project is configured into a throwaway build directory
+# and the generated build system is asked where the copy would actually go. That is
+# the step that was wrong; whether cmake -E copy then works is cmake's problem.
+#
+# Configuring costs a few seconds per case, which is why the cases are few.
+
+# pull the destination out of the generated copy command, or $null if there is none
+function CopyDestination($buildDir) {
+    $ninja = Join-Path $buildDir 'build.ninja'
+    if (-not (Test-Path $ninja)) { return $null }
+    $hit = Select-String -Path $ninja -Pattern '-E copy' | Select-Object -First 1
+    if (-not $hit) { return $null }
+    # cmake -E copy <source> <destination>, destination last before the closing quote
+    # of the cmd.exe /C string; either argument may be quoted if it contains spaces
+    if ($hit.Line -match '-E copy\s+(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|([^\s"]+))') {
+        $dest = if ($Matches[3]) { $Matches[3] } else { $Matches[4] }
+        return ($dest -replace '\\', '/').TrimEnd('/')
+    }
+    return $null
+}
+
+function ConfigureWith($buildDir, $defs) {
+    $args = @('-S', $repo, '-B', $buildDir, '-G', 'Ninja')
+    foreach ($d in $defs) { $args += "-D$d" }
+    & $cmake @args 2>&1 | Out-Null
+    return $LASTEXITCODE
+}
+
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("oxs_tests_" + [guid]::NewGuid().ToString('N').Substring(0,8))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+    $repoNorm = ($repo -replace '\\', '/').TrimEnd('/')
+
+    # the regression: "." must mean the repo root, not the build directory
+    $b = Join-Path $tmp 'dot'
+    $code = ConfigureWith $b @('OXS_COPY_UF2_TO=.')
+    $dest = CopyDestination $b
+    Check 'a relative destination resolves against the repo root' `
+          ($code -eq 0 -and $dest -eq $repoNorm) "configure=$code dest=$dest expected=$repoNorm"
+    # independent of where it points: a destination that reaches the generated command
+    # still relative would be read against the build directory, which is the whole bug
+    Check 'the generated destination is absolute' `
+          ($dest -match '^([A-Za-z]:/|/)') "dest=$dest"
+
+    # a relative subdirectory follows the same rule
+    $b = Join-Path $tmp 'sub'
+    $null = ConfigureWith $b @('OXS_COPY_UF2_TO=dist/hand-out')
+    Check 'a relative subdirectory hangs off the repo root too' `
+          ((CopyDestination $b) -eq "$repoNorm/dist/hand-out") "dest=$(CopyDestination $b)"
+
+    # an absolute path must survive untouched, this is the flash-a-board case
+    $drive = Join-Path $tmp 'drive'
+    $b = Join-Path $tmp 'abs'
+    $null = ConfigureWith $b @("OXS_COPY_UF2_TO=$drive")
+    Check 'an absolute destination is left alone' `
+          ((CopyDestination $b) -eq (($drive -replace '\\', '/').TrimEnd('/'))) "dest=$(CopyDestination $b)"
+
+    # the default must not touch anything outside the build directory
+    $b = Join-Path $tmp 'none'
+    $null = ConfigureWith $b @()
+    Check 'no destination means no copy command at all' `
+          ((CopyDestination $b) -eq $null) 'a default build must leave the working tree alone'
+} finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+}
+
 ""
 "$script:pass passed, $script:fail failed"
 # explicit, or the exit status would be that of the last cmake call - which the error

@@ -167,8 +167,13 @@ have their own runnable tests, which build throwaway git repos and fake binaries
 directory and never touch the working tree:
 
 ```powershell
-.\test\run_cmake_script_tests.ps1     # 16 checks, exits non-zero on failure
+.\test\run_cmake_script_tests.ps1     # 21 checks, exits non-zero on failure
 ```
+
+The last section covers `OXS_COPY_UF2_TO`, which lives in `CMakeLists.txt` rather than `tools/` and
+so cannot be driven with `cmake -P`. It configures the real project into a throwaway build directory
+and reads the destination out of the generated build system — the step that was once wrong. That
+needs the SDK in the environment and costs a few seconds per case, which is why the cases are few.
 
 `lib/` and `include/README` are still leftovers from a PlatformIO scaffold and contain only
 boilerplate. Everything behavioural is verified on hardware over the USB serial console
