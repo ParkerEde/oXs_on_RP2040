@@ -50,7 +50,7 @@ outright when drive `E:` does not exist.)
 
 `VERSION` is **generated**, not maintained by hand. `tools/gen_version.cmake` composes
 `VERSION_BASE` from `config.h` with the branch, the short commit and a `-dirty` marker into
-`build/generated/oxs_version.h`, e.g. `3.0.11-rk-main-85a5014`. It runs on every build (not at
+`build/generated/oxs_version.h`, e.g. `3.0.11-rk-main-b25351d`. It runs on every build (not at
 configure time, so a fresh commit cannot leave a stale hash) and rewrites the header only when the
 string changed, since everything includes `config.h`. `printConfigAndSequencers()` prints it, so what
 a board reports over USB names the exact commit it was built from — and says so when that build had
@@ -122,10 +122,15 @@ git cherry-pick <sha>...
 ```
 
 Our commits split into two kinds, and they must not be mixed in a PR:
-- **upstreamable** — real fixes, e.g. the negative-`OFFSET2` guards in `esc.cpp` (`c4bef56` for HW5,
-  `127aa91` for HW4) and the opt-in UF2 copy (`9b35cde`)
-- **local only** — `VERSION "3.0.11-RK"` in `config.h`, machine-local paths in `.vscode/settings.json`,
-  rebuilt `oXs.uf2` binaries, and this file
+- **upstreamable** — fixes and features that help anyone: the negative-`OFFSET2` guards in `esc.cpp`
+  (`c4bef56` for HW5, `127aa91` for HW4), the opt-in UF2 copy (`a65ec5a`), `GPSBAUD` with its v8 -> v9
+  config migration (`39f2022`) and the output fix on top of it (`b25351d`)
+- **local only** — the generated version string (`c8171c3`) and the UF2 staging built on it
+  (`f8b3dcb`), machine-local paths in `.vscode/settings.json`, rebuilt `oXs.uf2` binaries, and this file
+
+`fe674ec` is the one commit that mixes both: the flash-ceiling check in
+`tools/check_flash_layout.cmake` guards against bricking a board and belongs upstream, while the
+branch-named artifacts in the same commit do not. Split it before offering it.
 
 `oXs.uf2` is a committed binary that git cannot merge, so every branch that rebuilds it creates a
 conflict. Branch-named artifacts keep it out of the way by default; refresh it only on `rk-main`,
