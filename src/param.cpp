@@ -1828,14 +1828,14 @@ void printConfigAndSequencers(){   // print all and perform checks
         } else {
             printf("Foreseen GPS type is unknown  :")  ;
         }
-    printf("GPS baudrate = %" PRIu32 "\n", config.gpsBaudrate)  ;
-    if (gps.gpsInstalled && gps.GPS_fix) {
+    if (gps.gpsInstalled && gps.GPS_fix) {   // continues the line above, which ends on ':' without a newline
         printf("GPS is detected and has a fix\n")  ;
     } else if (gps.gpsInstalled ) {
         printf("GPS is detected but has not (yet) a fix\n")  ;
     } else {
         printf("GPS is not (yet) detected\n")  ;
     }
+    printf("GPS baudrate = %" PRIu32 "\n", config.gpsBaudrate)  ;
     if (config.ledInverted == 'I'){
         printf("Led color is inverted\n")  ;
     } else {
