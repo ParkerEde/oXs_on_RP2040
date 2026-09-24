@@ -156,11 +156,17 @@ add_custom_command(TARGET oXs POST_BUILD
 set(OXS_COPY_UF2_TO "" CACHE STRING "Directory to copy the UF2 to after a build (empty = do not copy)")
 
 if(OXS_COPY_UF2_TO)
+  # POST_BUILD commands run with the build directory as their working directory, so a
+  # relative destination would land in build/ - and "." would copy the file onto itself,
+  # silently and with a zero exit code. Resolve against the repo root, which is what a
+  # relative path here is meant to refer to. An absolute path (E:/) is left alone.
+  get_filename_component(OXS_COPY_UF2_DEST "${OXS_COPY_UF2_TO}"
+                         ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
   add_custom_command(TARGET oXs POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
             $<TARGET_FILE_DIR:oXs>/$<TARGET_FILE_BASE_NAME:oXs>.uf2
-            ${OXS_COPY_UF2_TO}
-    COMMENT "Copying ${OXS_UF2_NAME}.uf2 to ${OXS_COPY_UF2_TO}"
+            ${OXS_COPY_UF2_DEST}
+    COMMENT "Copying ${OXS_UF2_NAME}.uf2 to ${OXS_COPY_UF2_DEST}"
   )
 endif()
 

@@ -42,7 +42,10 @@ A build writes only into `build/`. Artifacts are named after the checked out bra
 when `.git/HEAD` changes. `-DOXS_UF2_NAME=oXs` gives the plain name back, which is what refreshing
 the `oXs.uf2` committed in the repo root needs. To also copy the artifact somewhere, pass
 `-DOXS_COPY_UF2_TO=<dir>` — a drive letter flashes a mounted RPI-RP2 directly, and
-`-DOXS_UF2_NAME=oXs -DOXS_COPY_UF2_TO=.` is the release refresh. (Upstream and `main` do both copies
+`"-DOXS_UF2_NAME=oXs" "-DOXS_COPY_UF2_TO=."` is the release refresh. A relative destination
+resolves against the repo root. **Quote these arguments in PowerShell**: it drops the trailing `.`
+of an unquoted `-DOXS_COPY_UF2_TO=.`, which leaves the value empty, and the build then copies
+nothing and still exits 0. (Upstream and `main` do both copies
 unconditionally, which dirties the working tree on every build and, on `main`, fails the build
 outright when drive `E:` does not exist.)
 
